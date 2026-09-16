@@ -22,6 +22,15 @@ jobs:
       - name: Build portable application
         shell: powershell
         run: .\build_windows.ps1
+      - name: Verify executable and bundled tools
+        shell: powershell
+        run: |
+          $folder = 'dist\FootageMaker'
+          foreach ($path in @('FootageMaker.exe', '_ffmpeg\ffmpeg.exe', '_ffmpeg\ffprobe.exe', 'config.json', 'demo_script.txt')) {
+            if (-not (Test-Path (Join-Path $folder $path))) { throw "Missing $path" }
+          }
+          $app = Start-Process -FilePath (Join-Path $folder 'FootageMaker.exe') -ArgumentList '--self-test' -Wait -PassThru
+          if ($app.ExitCode -ne 0) { throw "Executable self-test failed: $($app.ExitCode)" }
       - name: Zip portable folder
         shell: powershell
         run: Compress-Archive -Path dist\FootageMaker -DestinationPath FootageMaker_Windows10.zip
