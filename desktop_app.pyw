@@ -34,11 +34,11 @@ class App(tk.Tk):
         self.script = tk.StringVar()
         self.output = tk.StringVar(value=str(Path.home() / "Videos" / "rough_cut.mp4"))
         self.voice = tk.StringVar()
-        self.count = tk.StringVar(value=str(config.get("preview_clips", 12)))
+        self.count = tk.StringVar(value=str(config.get("preview_clips", 0)))
         self.format = tk.StringVar(value=config.get("format", "9:16"))
         self.pexels = tk.BooleanVar(value=False)
         self.key = tk.StringVar(value=os.getenv("PEXELS_API_KEY", ""))
-        self.status = tk.StringVar(value="Выберите сценарий, затем создайте монтажный план.")
+        self.status = tk.StringVar(value="Выберите сценарий. 0 фрагментов означает монтаж всего текста.")
         self.build()
         self.after(100, self.poll)
 
@@ -63,7 +63,7 @@ class App(tk.Tk):
 
         options = ttk.Frame(outer)
         options.grid(row=4, column=0, columnspan=3, sticky="ew", pady=8)
-        ttk.Label(options, text="Кадров (0 = весь текст):").pack(side="left")
+        ttk.Label(options, text="Фрагментов (0 = весь текст):").pack(side="left")
         ttk.Entry(options, textvariable=self.count, width=6).pack(side="left", padx=(5, 18))
         ttk.Label(options, text="Формат:").pack(side="left")
         ttk.Radiobutton(options, text="Вертикальный 9:16", variable=self.format, value="9:16").pack(side="left", padx=5)
@@ -72,7 +72,7 @@ class App(tk.Tk):
         ttk.Label(options, text="Ключ:").pack(side="left")
         ttk.Entry(options, textvariable=self.key, show="•", width=18).pack(side="left", padx=5)
 
-        center = ttk.LabelFrame(outer, text="Кадры — двойной щелчок меняет поисковый запрос", padding=6)
+        center = ttk.LabelFrame(outer, text="Фрагменты по 3–6 секунд — двойной щелчок меняет запрос", padding=6)
         center.grid(row=5, column=0, columnspan=3, sticky="nsew")
         center.columnconfigure(0, weight=1)
         center.rowconfigure(0, weight=1)
@@ -111,7 +111,7 @@ class App(tk.Tk):
                 try:
                     self.plan = json.loads(existing.read_text(encoding="utf-8"))
                     self.refresh()
-                    self.message(f"Загружен сохранённый план: {existing}")
+                    self.message(f"Загружен план: {len(self.plan['shots'])} из {self.plan.get('total_script_shots', '?')} фрагментов. Для всего текста нажмите «Создать план» при значении 0.")
                 except (OSError, ValueError, KeyError) as exc:
                     self.message(f"Не удалось открыть план: {exc}")
             else:
@@ -145,9 +145,9 @@ class App(tk.Tk):
         try:
             count = int(self.count.get())
         except ValueError as exc:
-            raise ValueError("Введите целое число кадров; 0 означает весь сценарий") from exc
+            raise ValueError("Введите целое число фрагментов; 0 означает весь сценарий") from exc
         if count < 0:
-            raise ValueError("Количество кадров не может быть отрицательным")
+            raise ValueError("Количество фрагментов не может быть отрицательным")
         plan = make_plan(path.read_text(encoding="utf-8-sig"), count, self.format.get() == "9:16")
         if not plan["shots"]:
             raise ValueError("Сценарий пуст")
@@ -156,7 +156,7 @@ class App(tk.Tk):
         self.plan = plan
         self.save()
         self.refresh()
-        self.message(f"План: {len(plan['shots'])} кадров из {plan['total_script_shots']}. Файл: {self.plan_path()}")
+        self.message(f"План: {len(plan['shots'])} фрагментов из {plan['total_script_shots']}. Файл: {self.plan_path()}")
         return True
 
     def plan_action(self):
@@ -272,8 +272,7 @@ class App(tk.Tk):
             messagebox.showinfo("Нет плана", "Сначала создайте план.")
             return
         if self.pexels.get() and not self.key.get().strip():
-            messagebox.showerror("Ключ Pexels", "Введите свой ключ Pexels или выключите поиск на видеостоке.")
-            return
+            self.message("Pexels пропущен: ключ не указан. Продолжаю поиск в Wikimedia Commons.")
         key = self.key.get().strip() if self.pexels.get() else ""
         self.launch(lambda log: self.search(log, key))
 
@@ -297,7 +296,7 @@ class App(tk.Tk):
             if not self.make():
                 return
             if self.pexels.get() and not self.key.get().strip():
-                raise ValueError("Для Pexels нужен свой ключ API")
+                self.message("Pexels пропущен: ключ не указан. Продолжаю поиск в Wikimedia Commons.")
             key = self.key.get().strip() if self.pexels.get() else ""
             target = Path(self.output.get()).expanduser()
             audio = Path(self.voice.get()).expanduser() if self.voice.get().strip() else None
@@ -315,6 +314,6 @@ if __name__ == "__main__":
         from tkinter import Tcl
         assert Tcl().eval("info patchlevel")
         assert program("ffmpeg") and program("ffprobe")
-        assert load_config().get("preview_clips") == 12
+        assert load_config().get("preview_clips") == 0
         sys.exit(0)
     App().mainloop()
