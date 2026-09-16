@@ -10,7 +10,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from footage_maker import choose_assets, make_plan, render
+from footage_maker import choose_assets, make_plan, program, render
 
 
 def load_config():
@@ -310,4 +310,11 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        # Runs in Windows CI without a desktop session to validate the frozen bundle.
+        from tkinter import Tcl
+        assert Tcl().eval("info patchlevel")
+        assert program("ffmpeg") and program("ffprobe")
+        assert load_config().get("preview_clips") == 12
+        sys.exit(0)
     App().mainloop()
