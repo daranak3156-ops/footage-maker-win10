@@ -19,6 +19,10 @@ jobs:
       - name: Check source
         shell: powershell
         run: python -m py_compile footage_maker.py desktop_app.pyw
+      - name: Test online media search and download
+        shell: powershell
+        run: |
+          python -c "from pathlib import Path; from footage_maker import commons_search,download; items=commons_search('Kyiv'); assert items, 'No reusable media found'; print(items[0]['title']); download(items[0]['url'], Path('media_smoke.bin'))"
       - name: Build portable application
         shell: powershell
         run: .\build_windows.ps1
