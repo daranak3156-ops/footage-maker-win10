@@ -1,0 +1,31 @@
+name: Build Windows 10 application
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install FFmpeg
+        shell: powershell
+        run: choco install ffmpeg -y --no-progress
+      - name: Check source
+        shell: powershell
+        run: python -m py_compile footage_maker.py desktop_app.pyw
+      - name: Build portable application
+        shell: powershell
+        run: .\build_windows.ps1
+      - name: Zip portable folder
+        shell: powershell
+        run: Compress-Archive -Path dist\FootageMaker -DestinationPath FootageMaker_Windows10.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FootageMaker_Windows10
+          path: FootageMaker_Windows10.zip
