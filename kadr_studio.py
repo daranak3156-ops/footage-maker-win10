@@ -22,7 +22,7 @@ def api(key, endpoint, **kwargs):
     return r.json()
 
 def rewrite(text, key, model):
-    data=api(key,'chat/completions',json={'model':model,'messages':[{'role':'system','content':'Ты редактор русскоязычных документальных роликов. Перепиши исходный текст своими словами, сохрани факты, имена, смысл и примерно длину. Не добавляй вымышленных фактов. Разбей результат на 6–30 коротких сцен. Верни только JSON с массивом scenes. Каждая сцена: text (русский текст озвучки до 1000 символов), query (точный поисковый запрос фотографии на английском), person (полное имя упомянутой личности, либо пустая строка). Не включай рекламу и призывы подписаться.'},{'role':'user','content':text}], 'response_format':{'type':'json_object'}})
+    data=api(key,'chat/completions',json={'model':'gpt-6-astra','reasoning_effort':'medium','messages':[{'role':'system','content':'Ты редактор русскоязычных документальных роликов. Перепиши исходный текст своими словами, сохрани факты, имена, смысл и примерно длину. Не добавляй вымышленных фактов. Разбей результат на 6–30 коротких сцен. Верни только JSON с массивом scenes. Каждая сцена: text (русский текст озвучки до 1000 символов), query (точный поисковый запрос фотографии на английском), person (полное имя упомянутой личности, либо пустая строка). Не включай рекламу и призывы подписаться.'},{'role':'user','content':text}], 'response_format':{'type':'json_object'}})
     scenes=json.loads(data['choices'][0]['message']['content'])['scenes']
     if not isinstance(scenes,list) or not scenes: raise ValueError('API вернул пустой сценарий')
     for s in scenes:
@@ -109,19 +109,20 @@ class Studio(ctk.CTk):
         main=ctk.CTkScrollableFrame(self,fg_color='transparent'); main.grid(row=0,column=1,sticky='nsew',padx=28,pady=20)
         ctk.CTkLabel(main,text='Создайте новое видео',font=('Segoe UI',28,'bold')).pack(anchor='w')
         ctk.CTkLabel(main,text='Вставьте ссылку. Программа подготовит сценарий, фотографии, голос и монтаж.',text_color='#94a3bd',wraplength=750,justify='left').pack(anchor='w',pady=(4,20))
-        self.url=ctk.CTkEntry(main,height=46,placeholder_text='Ссылка на YouTube или другое поддерживаемое видео'); self.url.pack(fill='x',pady=(0,14))
-        self.tabs=ctk.CTkTabview(main,fg_color='#141e32',segmented_button_selected_color='#5965df'); self.tabs.pack(fill='x')
-        settings=self.tabs.add('Настройки API'); texttab=self.tabs.add('Свой текст'); self.tabs.add('Как работает')
+        side.grid_remove()
+        main.grid(column=0,columnspan=2)
+        self.openai_key=ctk.StringVar(value=os.getenv('OPENAI_API_KEY',''))
+        settings=ctk.CTkFrame(main,fg_color='#141e32'); settings.pack(fill='x',pady=12)
         self.fields={}
-        for label,key,value,secret in [('OpenAI · рерайт и распознавание','key',os.getenv('OPENAI_API_KEY',''),True),('TMDB API-ключ · необязательно','tmdb',os.getenv('TMDB_API_KEY',''),True),('Модель рерайта','model','gpt-4.1-mini',False),('Lumean API-ключ · озвучка','lumean',os.getenv('LUMEAN_API_KEY',''),True),('ID шаблона Lumean','template','',False)]:
-            row=ctk.CTkFrame(settings,fg_color='transparent'); row.pack(fill='x',pady=4)
-            ctk.CTkLabel(row,text=label,width=235,anchor='w').pack(side='left')
-            e=ctk.CTkEntry(row,show='•' if secret else '',height=34); e.insert(0,value); e.pack(side='left',fill='x',expand=True); self.fields[key]=e
-        row=ctk.CTkFrame(settings,fg_color='transparent'); row.pack(fill='x',pady=8)
-        ctk.CTkButton(row,text='Загрузить шаблоны Lumean',command=self.load_templates,width=220).pack(side='left')
-        self.orientation=ctk.CTkOptionMenu(row,values=['16:9 · Горизонтально','9:16 · Вертикально'],width=220); self.orientation.pack(side='right')
-        self.text=ctk.CTkTextbox(texttab,height=205); self.text.pack(fill='both',expand=True)
-        ctk.CTkLabel(self.tabs.tab('Как работает'),text='1. Вставьте ссылку или свой текст.\n2. Укажите API-ключи и нажмите «Создать видео».\n3. Дождитесь готового MP4 в папке проекта.\n\nНужны Chrome и интернет. Фотографии сохраняются навсегда.\nОзвучка — Lumean: голос и модель берутся из вашего шаблона.\nРерайт и распознавание — OpenAI, отдельный ключ.\nПроверьте факты и права на фотографии перед публикацией.',justify='left',wraplength=700).pack(anchor='w',padx=10,pady=12)
+        for label,key,value,secret in [('ССЫЛКА НА ВИДЕО YOUTUBE','url','',False),('TMDB API-ключ · необязательно','tmdb',os.getenv('TMDB_API_KEY',''),True),('Lumean API-ключ · озвучка','lumean',os.getenv('LUMEAN_API_KEY',''),True),('ID шаблона Lumean','template','',False)]:
+            row=ctk.CTkFrame(settings,fg_color='transparent'); row.pack(fill='x',padx=18,pady=12)
+            ctk.CTkLabel(row,text=label,width=270,anchor='w').pack(side='left')
+            e=ctk.CTkEntry(row,show='•' if secret else '',height=42); e.insert(0,value); e.pack(side='left',fill='x',expand=True); self.fields[key]=e
+        self.url=self.fields.pop('url')
+        ctk.CTkButton(settings,text='Загрузить шаблоны Lumean',command=self.load_templates,width=265,height=42).pack(anchor='w',padx=18,pady=14)
+        modelrow=ctk.CTkFrame(main,fg_color='transparent'); modelrow.pack(fill='x',pady=8)
+        ctk.CTkLabel(modelrow,text='Написание текста: GPT-6 Astra · Среднее',text_color='#a8b3ff',font=('Segoe UI',15)).pack(side='left')
+        ctk.CTkButton(modelrow,text='Подключить OpenAI',width=165,fg_color='#28344c',command=self.configure_openai).pack(side='right')
         buttons=ctk.CTkFrame(main,fg_color='transparent'); buttons.pack(fill='x',pady=18)
         self.start=ctk.CTkButton(buttons,text='Создать видео',height=48,width=240,font=('Segoe UI',17,'bold'),fg_color='#6265ed',hover_color='#4e51ca',command=self.launch); self.start.pack(side='left')
         self.cancel=ctk.CTkButton(buttons,text='Остановить',height=48,width=120,fg_color='#28344c',state='disabled',command=self.stop.set); self.cancel.pack(side='left',padx=12)
@@ -130,6 +131,12 @@ class Studio(ctk.CTk):
         self.status=ctk.CTkLabel(main,text='Готов к работе',anchor='w',wraplength=740); self.status.pack(fill='x',pady=8)
         self.log=ctk.CTkTextbox(main,height=145,fg_color='#080e1b',text_color='#a9b9d3'); self.log.pack(fill='x'); self.log.configure(state='disabled')
         self.after(150,self.poll)
+    def configure_openai(self):
+        window=ctk.CTkToplevel(self); window.title('Подключение OpenAI'); window.geometry('540x220'); window.after(100,window.lift)
+        ctk.CTkLabel(window,text='API-ключ для рерайта и распознавания видео').pack(padx=20,pady=(20,8))
+        ctk.CTkEntry(window,textvariable=self.openai_key,show='•',width=480,height=40).pack(padx=20,pady=8)
+        ctk.CTkLabel(window,text='GPT-6 Astra · усилие всегда «Среднее». Озвучка — Lumean.',wraplength=480).pack(padx=20,pady=8)
+        ctk.CTkButton(window,text='Готово',command=window.destroy).pack(pady=8)
     def load_templates(self):
         key=self.fields['lumean'].get().strip()
         if not key: return messagebox.showinfo('Lumean','Введите API-ключ Lumean.')
@@ -151,8 +158,8 @@ class Studio(ctk.CTk):
     def open_video(self):
         if self.output and os.name=='nt': os.startfile(str(self.output))
     def launch(self):
-        cfg={k:v.get().strip() for k,v in self.fields.items()}; cfg.update(vertical=self.orientation.get().startswith('9:16'))
-        url=self.url.get().strip(); manual=self.text.get('1.0','end').strip()
+        cfg={k:v.get().strip() for k,v in self.fields.items()}; cfg.update(vertical=False,key=self.openai_key.get().strip(),model='gpt-6-astra')
+        url=self.url.get().strip(); manual='' 
         if not cfg['key']: return messagebox.showinfo('API-ключ','Введите OpenAI API-ключ для рерайта и распознавания. Озвучка выполняется Lumean.')
         if not cfg['lumean'] or not cfg['template']: return messagebox.showinfo('Lumean','Введите ключ Lumean и выберите шаблон озвучки.')
         if not manual and not url.startswith(('https://','http://')): return messagebox.showinfo('Источник','Вставьте ссылку на видео или свой текст.')
