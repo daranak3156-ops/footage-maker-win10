@@ -22,7 +22,7 @@ def api(key, endpoint, **kwargs):
     return r.json()
 
 def rewrite(text, key, model):
-    data=api(key,'chat/completions',json={'model':'gpt-6-astra','reasoning_effort':'medium','messages':[{'role':'system','content':'Ты редактор русскоязычных документальных роликов. Перепиши исходный текст своими словами, сохрани факты, имена, смысл и примерно длину. Не добавляй вымышленных фактов. Разбей результат на 6–30 коротких сцен. Верни только JSON с массивом scenes. Каждая сцена: text (русский текст озвучки до 1000 символов), query (точный поисковый запрос фотографии на английском), person (полное имя упомянутой личности, либо пустая строка). Не включай рекламу и призывы подписаться.'},{'role':'user','content':text}], 'response_format':{'type':'json_object'}})
+    data=api(key,'chat/completions',json={'model':model,'reasoning_effort':'medium','messages':[{'role':'system','content':'Ты редактор русскоязычных документальных роликов. Перепиши исходный текст своими словами, сохрани факты, имена, смысл и примерно длину. Не добавляй вымышленных фактов. Разбей результат на 6–30 коротких сцен. Верни только JSON с массивом scenes. Каждая сцена: text (русский текст озвучки до 1000 символов), query (точный поисковый запрос фотографии на английском), person (полное имя упомянутой личности, либо пустая строка). Не включай рекламу и призывы подписаться.'},{'role':'user','content':text}], 'response_format':{'type':'json_object'}})
     scenes=json.loads(data['choices'][0]['message']['content'])['scenes']
     if not isinstance(scenes,list) or not scenes: raise ValueError('API вернул пустой сценарий')
     for s in scenes:
@@ -121,7 +121,10 @@ class Studio(ctk.CTk):
         self.url=self.fields.pop('url')
         ctk.CTkButton(settings,text='Загрузить шаблоны Lumean',command=self.load_templates,width=265,height=42).pack(anchor='w',padx=18,pady=14)
         modelrow=ctk.CTkFrame(main,fg_color='transparent'); modelrow.pack(fill='x',pady=8)
-        ctk.CTkLabel(modelrow,text='Написание текста: GPT-6 Astra · Среднее',text_color='#a8b3ff',font=('Segoe UI',15)).pack(side='left')
+        ctk.CTkLabel(modelrow,text='Модель текста',text_color='#a8b3ff').pack(side='left',padx=(0,12))
+        self.models={'GPT-6.2 Astra':'gpt-6.2-astra','GPT-6.2 Sol':'gpt-6.2-sol','GPT-6.1 Sol':'gpt-6.1-sol','GPT-6.1 Terra':'gpt-6.1-terra','GPT-6 Astra':'gpt-6-astra','GPT-6 Sol':'gpt-6-sol','GPT-6 Luna':'gpt-6-luna'}
+        self.model_choice=ctk.CTkOptionMenu(modelrow,values=list(self.models),width=190); self.model_choice.set('GPT-6 Astra'); self.model_choice.pack(side='left')
+        ctk.CTkLabel(modelrow,text='Усилие: Среднее',text_color='#a8b3ff').pack(side='left',padx=12)
         ctk.CTkButton(modelrow,text='Подключить OpenAI',width=165,fg_color='#28344c',command=self.configure_openai).pack(side='right')
         buttons=ctk.CTkFrame(main,fg_color='transparent'); buttons.pack(fill='x',pady=18)
         self.start=ctk.CTkButton(buttons,text='Создать видео',height=48,width=240,font=('Segoe UI',17,'bold'),fg_color='#6265ed',hover_color='#4e51ca',command=self.launch); self.start.pack(side='left')
@@ -135,7 +138,7 @@ class Studio(ctk.CTk):
         window=ctk.CTkToplevel(self); window.title('Подключение OpenAI'); window.geometry('540x220'); window.after(100,window.lift)
         ctk.CTkLabel(window,text='API-ключ для рерайта и распознавания видео').pack(padx=20,pady=(20,8))
         ctk.CTkEntry(window,textvariable=self.openai_key,show='•',width=480,height=40).pack(padx=20,pady=8)
-        ctk.CTkLabel(window,text='GPT-6 Astra · усилие всегда «Среднее». Озвучка — Lumean.',wraplength=480).pack(padx=20,pady=8)
+        ctk.CTkLabel(window,text='Модель выбирается в главном окне; усилие всегда «Среднее». Озвучка — Lumean.',wraplength=480).pack(padx=20,pady=8)
         ctk.CTkButton(window,text='Готово',command=window.destroy).pack(pady=8)
     def load_templates(self):
         key=self.fields['lumean'].get().strip()
@@ -158,7 +161,7 @@ class Studio(ctk.CTk):
     def open_video(self):
         if self.output and os.name=='nt': os.startfile(str(self.output))
     def launch(self):
-        cfg={k:v.get().strip() for k,v in self.fields.items()}; cfg.update(vertical=False,key=self.openai_key.get().strip(),model='gpt-6-astra')
+        cfg={k:v.get().strip() for k,v in self.fields.items()}; cfg.update(vertical=False,key=self.openai_key.get().strip(),model=self.models[self.model_choice.get()])
         url=self.url.get().strip(); manual='' 
         if not cfg['key']: return messagebox.showinfo('API-ключ','Введите OpenAI API-ключ для рерайта и распознавания. Озвучка выполняется Lumean.')
         if not cfg['lumean'] or not cfg['template']: return messagebox.showinfo('Lumean','Введите ключ Lumean и выберите шаблон озвучки.')
