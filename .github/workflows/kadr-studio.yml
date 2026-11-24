@@ -1,0 +1,26 @@
+name: Kadr Studio Windows EXE
+on:
+  push:
+    branches: [kadr-studio]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install customtkinter requests imageio-ffmpeg pillow yt-dlp selenium pyinstaller
+      - run: python -m py_compile kadr_studio.py kadr_media.py
+      - run: python kadr_studio.py --self-test
+      - run: pyinstaller --noconfirm --onefile --windowed --name KadrStudio --collect-all customtkinter --collect-all imageio_ffmpeg --collect-all selenium --collect-all yt_dlp kadr_studio.py
+      - name: Test EXE
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/KadrStudio.exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Self test failed: $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KadrStudio-Windows
+          path: dist/KadrStudio.exe
