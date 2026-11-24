@@ -6,6 +6,7 @@ import requests
 from PIL import Image
 from imageio_ffmpeg import get_ffmpeg_exe
 import yt_dlp
+from lumean_client import speech as lumean_speech, templates as lumean_templates
 from kadr_media import bing_people_chrome, tmdb_people, save_photos, make_speech, probe_duration
 
 ROOT = Path.home() / 'Videos' / 'KadrStudio'
@@ -80,7 +81,7 @@ def build_project(url,manual,cfg,log,stop):
         scene['photo']=photos[index%len(photos)]; save(state)
         check(); log(f'4 / 5 · API-озвучка: сцена {index+1} из {len(scenes)}')
         audio=project/f'voice-{index:03d}.mp3'
-        make_speech(cfg['key'],scene['text'],cfg['voice'],cfg['tts'],audio)
+        lumean_speech(cfg['lumean'],cfg['template'],scene['text'],audio,stop,log)
         check(); log(f'5 / 5 · Монтаж: сцена {index+1} из {len(scenes)}')
         clip=project/f'clip-{index:03d}.mp4'
         render_scene(scene['photo']['path'],audio,clip,cfg['vertical']); clips.append(clip)
@@ -112,15 +113,15 @@ class Studio(ctk.CTk):
         self.tabs=ctk.CTkTabview(main,fg_color='#141e32',segmented_button_selected_color='#5965df'); self.tabs.pack(fill='x')
         settings=self.tabs.add('Настройки API'); texttab=self.tabs.add('Свой текст'); self.tabs.add('Как работает')
         self.fields={}
-        for label,key,value,secret in [('OpenAI API-ключ','key',os.getenv('OPENAI_API_KEY',''),True),('TMDB API-ключ · необязательно','tmdb',os.getenv('TMDB_API_KEY',''),True),('Модель рерайта','model','gpt-4.1-mini',False),('Модель озвучки','tts','gpt-4o-mini-tts',False)]:
+        for label,key,value,secret in [('OpenAI · рерайт и распознавание','key',os.getenv('OPENAI_API_KEY',''),True),('TMDB API-ключ · необязательно','tmdb',os.getenv('TMDB_API_KEY',''),True),('Модель рерайта','model','gpt-4.1-mini',False),('Lumean API-ключ · озвучка','lumean',os.getenv('LUMEAN_API_KEY',''),True),('ID шаблона Lumean','template','',False)]:
             row=ctk.CTkFrame(settings,fg_color='transparent'); row.pack(fill='x',pady=4)
             ctk.CTkLabel(row,text=label,width=235,anchor='w').pack(side='left')
             e=ctk.CTkEntry(row,show='•' if secret else '',height=34); e.insert(0,value); e.pack(side='left',fill='x',expand=True); self.fields[key]=e
         row=ctk.CTkFrame(settings,fg_color='transparent'); row.pack(fill='x',pady=8)
-        ctk.CTkLabel(row,text='Голос',width=80,anchor='w').pack(side='left'); self.voice=ctk.CTkOptionMenu(row,values=['marin','cedar','alloy','nova','coral']); self.voice.pack(side='left')
+        ctk.CTkButton(row,text='Загрузить шаблоны Lumean',command=self.load_templates,width=220).pack(side='left')
         self.orientation=ctk.CTkOptionMenu(row,values=['16:9 · Горизонтально','9:16 · Вертикально'],width=220); self.orientation.pack(side='right')
         self.text=ctk.CTkTextbox(texttab,height=205); self.text.pack(fill='both',expand=True)
-        ctk.CTkLabel(self.tabs.tab('Как работает'),text='1. Вставьте ссылку или свой текст.\n2. Укажите API-ключи и нажмите «Создать видео».\n3. Дождитесь готового MP4 в папке проекта.\n\nНужны Chrome и интернет. Фотографии сохраняются навсегда.\nОзвучка и рерайт оплачиваются вашим API-провайдером.\nПроверьте факты и права на фотографии перед публикацией.',justify='left',wraplength=700).pack(anchor='w',padx=10,pady=12)
+        ctk.CTkLabel(self.tabs.tab('Как работает'),text='1. Вставьте ссылку или свой текст.\n2. Укажите API-ключи и нажмите «Создать видео».\n3. Дождитесь готового MP4 в папке проекта.\n\nНужны Chrome и интернет. Фотографии сохраняются навсегда.\nОзвучка — Lumean: голос и модель берутся из вашего шаблона.\nРерайт и распознавание — OpenAI, отдельный ключ.\nПроверьте факты и права на фотографии перед публикацией.',justify='left',wraplength=700).pack(anchor='w',padx=10,pady=12)
         buttons=ctk.CTkFrame(main,fg_color='transparent'); buttons.pack(fill='x',pady=18)
         self.start=ctk.CTkButton(buttons,text='Создать видео',height=48,width=240,font=('Segoe UI',17,'bold'),fg_color='#6265ed',hover_color='#4e51ca',command=self.launch); self.start.pack(side='left')
         self.cancel=ctk.CTkButton(buttons,text='Остановить',height=48,width=120,fg_color='#28344c',state='disabled',command=self.stop.set); self.cancel.pack(side='left',padx=12)
@@ -129,15 +130,31 @@ class Studio(ctk.CTk):
         self.status=ctk.CTkLabel(main,text='Готов к работе',anchor='w',wraplength=740); self.status.pack(fill='x',pady=8)
         self.log=ctk.CTkTextbox(main,height=145,fg_color='#080e1b',text_color='#a9b9d3'); self.log.pack(fill='x'); self.log.configure(state='disabled')
         self.after(150,self.poll)
+    def load_templates(self):
+        key=self.fields['lumean'].get().strip()
+        if not key: return messagebox.showinfo('Lumean','Введите API-ключ Lumean.')
+        def work():
+            try: self.events.put(('templates',lumean_templates(key)))
+            except Exception as e: self.events.put(('log',str(e)))
+        threading.Thread(target=work,daemon=True).start()
+    def show_templates(self, items):
+        if not items: return messagebox.showinfo('Lumean','Создайте шаблон озвучки на сайте Lumean. Шаблоны в папках можно выбрать, вставив их ID вручную.')
+        window=ctk.CTkToplevel(self); window.title('Ваши голоса Lumean'); window.geometry('560x420'); window.after(100,window.lift)
+        box=ctk.CTkScrollableFrame(window); box.pack(fill='both',expand=True,padx=15,pady=15)
+        def choose(item):
+            entry=self.fields['template']; entry.delete(0,'end'); entry.insert(0,item['id']); window.destroy()
+        for item in items:
+            ctk.CTkButton(box,text=item.get('name',item['id'])+' · '+item.get('service_key',''),command=lambda i=item:choose(i)).pack(fill='x',pady=5)
     def open_folder(self):
         ROOT.mkdir(parents=True,exist_ok=True)
         if os.name=='nt': os.startfile(str(ROOT))
     def open_video(self):
         if self.output and os.name=='nt': os.startfile(str(self.output))
     def launch(self):
-        cfg={k:v.get().strip() for k,v in self.fields.items()}; cfg.update(voice=self.voice.get(),vertical=self.orientation.get().startswith('9:16'))
+        cfg={k:v.get().strip() for k,v in self.fields.items()}; cfg.update(vertical=self.orientation.get().startswith('9:16'))
         url=self.url.get().strip(); manual=self.text.get('1.0','end').strip()
-        if not cfg['key']: return messagebox.showinfo('API-ключ','Введите OpenAI API-ключ.')
+        if not cfg['key']: return messagebox.showinfo('API-ключ','Введите OpenAI API-ключ для рерайта и распознавания. Озвучка выполняется Lumean.')
+        if not cfg['lumean'] or not cfg['template']: return messagebox.showinfo('Lumean','Введите ключ Lumean и выберите шаблон озвучки.')
         if not manual and not url.startswith(('https://','http://')): return messagebox.showinfo('Источник','Вставьте ссылку на видео или свой текст.')
         self.stop.clear(); self.start.configure(state='disabled'); self.cancel.configure(state='normal'); self.play.configure(state='disabled'); self.progress.configure(mode='indeterminate'); self.progress.start()
         def worker():
@@ -148,6 +165,7 @@ class Studio(ctk.CTk):
         try:
             while True:
                 kind,value=self.events.get_nowait()
+                if kind=='templates': self.show_templates(value); continue
                 if kind in ('done','error'):
                     self.progress.stop(); self.progress.configure(mode='determinate'); self.progress.set(1 if kind=='done' else 0); self.start.configure(state='normal'); self.cancel.configure(state='disabled')
                 if kind=='done': self.output=value; self.play.configure(state='normal'); value='Готово: '+str(value)
